@@ -21,30 +21,38 @@ var ImagesDir string
 var Version string = "v0.0.0"
 
 type ConfigType struct {
-	Debug   int         `yaml:"debug"`
-	Port    int         `yaml:"port"`
-	Toast   ToastType   `yaml:"toast"`
-	Frp     FrpType     `yaml:"frp"`
-	Forward ForwardType `yaml:"forward"`
+	Debug   int         `yaml:"debug" json:"debug"`
+	Port    int         `yaml:"port" json:"port"`
+	Toast   ToastType   `yaml:"toast" json:"toast"`
+	Frp     FrpType     `yaml:"frp" json:"frp"`
+	Forward ForwardType `yaml:"forward" json:"forward"`
 }
 
 type ToastType struct {
-	Icons []string `yaml:"icons"`
+	Icons []string `yaml:"icons" json:"icons"`
 }
 
 type FrpType struct {
-	Enable     int    `yaml:"enable"`
-	ServerAddr string `yaml:"server_addr"`
-	ServerPort int    `yaml:"server_port"`
-	Token      string `yaml:"token"`
-	RemotePort int    `yaml:"remote_port"`
+	Enable     int          `yaml:"enable" json:"enable"`
+	ServerAddr string       `yaml:"server_addr" json:"server_addr"`
+	ServerPort int          `yaml:"server_port" json:"server_port"`
+	Token      string       `yaml:"token" json:"token"`
+	Proxy      FrpProxyType `yaml:"proxy" json:"proxy"`
+}
+
+type FrpProxyType struct {
+	Name       string `yaml:"name" json:"name"`
+	Type       string `yaml:"type" json:"type"`
+	LocalIP    string `yaml:"local_ip" json:"local_ip"`
+	LocalPort  int    `yaml:"local_port" json:"local_port"`
+	RemotePort int    `yaml:"remote_port" json:"remote_port"`
 }
 
 type ForwardType struct {
-	Enable     int    `yaml:"enable"`
-	ServerAddr string `yaml:"server_addr"`
-	ServerPort int    `yaml:"server_port"`
-	Token      string `yaml:"token"`
+	Enable     int    `yaml:"enable" json:"enable"`
+	ServerAddr string `yaml:"server_addr" json:"server_addr"`
+	ServerPort int    `yaml:"server_port" json:"server_port"`
+	Token      string `yaml:"token" json:"token"`
 }
 
 func init() {
@@ -79,7 +87,13 @@ func initConfigFile(ConfigPath string) {
 		ServerAddr: "127.0.0.1",
 		ServerPort: 7000,
 		Token:      "httpwinnotice123456",
-		RemotePort: 19001,
+		Proxy: FrpProxyType{
+			Name:       "http-win-notice",
+			Type:       "tcp",
+			LocalIP:    "127.0.0.1",
+			LocalPort:  Config.Port,
+			RemotePort: 19001,
+		},
 	}
 	Config.Frp = Frp
 

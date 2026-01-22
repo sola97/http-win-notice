@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>消息通知记录</title>
     <script src="/static/js/vue.js"></script>
     <link rel="stylesheet" href="/static/css/antd.min.css" />
@@ -11,12 +12,16 @@
 <body>
 
 <div id="app">
-<!--    <a-menu v-model="current" mode="horizontal">-->
-<!--        <a-menu-item key="home">-->
-<!--            <a-icon type="home"></a-icon>-->
-<!--            首页-->
-<!--        </a-menu-item>-->
-<!--    </a-menu>-->
+    <div class="top-nav">
+        <a-menu v-model="current" mode="horizontal" @click="menuClick">
+            <a-menu-item key="logs">
+                通知记录
+            </a-menu-item>
+            <a-menu-item key="config">
+                配置管理
+            </a-menu-item>
+        </a-menu>
+    </div>
 
     <div class="log-table">
         <a-table
@@ -88,7 +93,7 @@
                 tableKey:0,
                 viewHeight:1080,
                 testMsg:"",
-                current: ['home'],
+                current: ['logs'],
                 pagination:{
                     current: currentPage,
                     pageSize:pageSize,
@@ -112,20 +117,33 @@
                 this.$nextTick(()=>{
                     // let allPaddingHeight = 15 + 5;
                     let tableHeadHeight = getEmHeightByClass("ant-table-thead");
+                    let topNavHeight = getEmHeightByClass("top-nav");
                     // let dateSearchHeight = getEmHeightByClass("top-date-picker");
                     // console.log('dateSearchHeight=',dateSearchHeight)
                     let paginationHeight = getEmHeightByClass('ant-table-pagination');
                     // let paginationAllMarginHeight = 16 * 2;
 
-                    this.viewHeight = document.body.clientHeight - tableHeadHeight - paginationHeight;
+                    this.viewHeight = document.body.clientHeight - tableHeadHeight - paginationHeight - topNavHeight;
                     this.tableKey+=1;
                     console.log('viewHeight=', this.viewHeight)
                 })
+            },
+            menuClick(e){
+                if(e.key === "config"){
+                    window.location.href = "/config"
+                    return
+                }
+                if(e.key === "logs"){
+                    window.location.href = "/"
+                }
             },
         }
     })
 </script>
 <style>
-
+    .top-nav{
+        background: #fff;
+        border-bottom: 1px solid #f0f0f0;
+    }
 </style>
 </html>

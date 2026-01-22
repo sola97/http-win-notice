@@ -264,7 +264,12 @@ frp:
   server_addr: 123.123.1.2
   server_port: 7000
   token: httpwinnotice123456
-  remote_port: 19001
+  proxy:
+    name: http-win-notice
+    type: tcp
+    local_ip: 127.0.0.1
+    local_port: 19000
+    remote_port: 19001
 ```
 
 配置的各项解释如下：
@@ -273,7 +278,11 @@ frp:
 - server_addr: 部署 frps 服务器的公网 ip
 - server_port: frps 服务端口号
 - token: 与服务器端配置 token 一致，建议将默认值修改
-- remote_port: 转发的远端端口号
+- proxy.name: 代理名称，对应 frpc.ini 的段名
+- proxy.type: 代理类型，例如 tcp
+- proxy.local_ip: 本地 IP
+- proxy.local_port: 本地端口
+- proxy.remote_port: 转发的远端端口号
 
 注意服务器防火墙放开对应的端口号，以上示例配置在公网调用时使用`http://123.123.1.2:19001/api/toast`
 
@@ -303,5 +312,10 @@ frp:
   server_addr: 127.0.0.1
   server_port: 7000
   token: httpwinnotice123456
-  remote_port: 19001
+  proxy:
+    name: http-win-notice
+    type: tcp
+    local_ip: 127.0.0.1
+    local_port: 19000
+    remote_port: 19001
 ```

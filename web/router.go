@@ -5,6 +5,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"html/template"
 	"http-win-notice/api"
+	"http-win-notice/utils/setting"
 	"net/http"
 )
 
@@ -21,6 +22,7 @@ func InitRouters(r *gin.Engine) {
 		staticServer := http.FileServer(http.FS(staticFS))
 		staticServer.ServeHTTP(c.Writer, c.Request)
 	})
+	r.StaticFS("/images", http.Dir(setting.ImagesDir))
 	r.SetHTMLTemplate(template.Must(template.New("").ParseFS(htmlFS, "templates/*")))
 
 	//外部引用方式
@@ -28,5 +30,11 @@ func InitRouters(r *gin.Engine) {
 	//r.Static("/static", "./web/static")
 
 	r.GET("/api/toast", api.ToastApi)
+	r.GET("/api/config", api.GetConfigApi)
+	r.POST("/api/config", api.UpdateConfigApi)
+	r.POST("/api/config/icon/upload", api.UploadIconApi)
+	r.GET("/api/frp/status", api.GetFrpStatusApi)
+	r.GET("/api/frp/logs", api.GetFrpLogsApi)
 	r.GET("/", api.HomePage)
+	r.GET("/config", api.ConfigPage)
 }

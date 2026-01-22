@@ -36,7 +36,7 @@ func onReady() {
 		serverCh <- true
 		//clientRunMenu := systray.AddMenuItemCheckbox("服务启动", "服务启动", true)
 		webMenu := systray.AddMenuItem("查看记录", "点击打开web页面")
-		settingMenu := systray.AddMenuItem("配置文件", "配置文件")
+		settingMenu := systray.AddMenuItem("查看配置", "打开配置页面")
 		settingDirMenu := systray.AddMenuItem("配置目录", "配置目录")
 		autoLunchFlag := false
 		if comm.ShortcutExists() {
@@ -60,7 +60,7 @@ func onReady() {
 					comm.MakeShortcut()
 				}
 			case <-settingMenu.ClickedCh:
-				open.Run(setting.ConfigPath)
+				open.Run(setting.HomeUrl() + "/config")
 			case <-settingDirMenu.ClickedCh:
 				open.Run(utils.RootDir)
 			//case <-clientRunMenu.ClickedCh:

@@ -8,7 +8,9 @@ import (
 	"os/exec"
 	"path"
 	"strconv"
+	"sync"
 	"syscall"
+	"time"
 )
 
 const FrpConfigTemplate = `[common]
@@ -16,19 +18,93 @@ server_addr = ${ServerAddr}
 server_port = ${ServerPort}
 token = ${Token}
 
-[ssh]
-type = tcp
-local_ip = 127.0.0.1
+[${ProxyName}]
+type = ${ProxyType}
+local_ip = ${LocalIP}
 local_port = ${LocalPort}
 remote_port = ${RemotePort}`
 
+type RuntimeStatus struct {
+	Enabled    bool   `json:"enabled"`
+	Running    bool   `json:"running"`
+	PID        int    `json:"pid"`
+	StartTime  string `json:"start_time"`
+	LastError  string `json:"last_error"`
+	FrpcPath   string `json:"frpc_path"`
+	ConfigPath string `json:"config_path"`
+	LogPath    string `json:"log_path"`
+}
+
+var (
+	statusMu sync.Mutex
+	status   = baseStatus()
+)
+
+func baseStatus() RuntimeStatus {
+	return RuntimeStatus{
+		Enabled:    setting.Config.Frp.Enable == 1,
+		Running:    false,
+		PID:        0,
+		StartTime:  "",
+		LastError:  "",
+		FrpcPath:   path.Join(utils.RootDir, "frpc.exe"),
+		ConfigPath: path.Join(utils.RootDir, "frpc.ini"),
+		LogPath:    path.Join(utils.RootDir, "frpc.log"),
+	}
+}
+
+func updateStatus(update func(*RuntimeStatus)) {
+	statusMu.Lock()
+	update(&status)
+	statusMu.Unlock()
+}
+
+func GetStatus() RuntimeStatus {
+	statusMu.Lock()
+	current := status
+	statusMu.Unlock()
+	current.Enabled = setting.Config.Frp.Enable == 1
+	if current.FrpcPath == "" || current.ConfigPath == "" || current.LogPath == "" {
+		base := baseStatus()
+		if current.FrpcPath == "" {
+			current.FrpcPath = base.FrpcPath
+		}
+		if current.ConfigPath == "" {
+			current.ConfigPath = base.ConfigPath
+		}
+		if current.LogPath == "" {
+			current.LogPath = base.LogPath
+		}
+	}
+	return current
+}
+
 func initFrpConfig() {
+	proxy := setting.Config.Frp.Proxy
+	if proxy.Name == "" {
+		proxy.Name = "http-win-notice"
+	}
+	if proxy.Type == "" {
+		proxy.Type = "tcp"
+	}
+	if proxy.LocalIP == "" {
+		proxy.LocalIP = "127.0.0.1"
+	}
+	if proxy.LocalPort == 0 {
+		proxy.LocalPort = setting.Config.Port
+	}
+	if proxy.RemotePort == 0 {
+		proxy.RemotePort = 19001
+	}
 	var config = map[string]string{
 		"ServerAddr": setting.Config.Frp.ServerAddr,
 		"ServerPort": strconv.Itoa(setting.Config.Frp.ServerPort),
 		"Token":      setting.Config.Frp.Token,
-		"LocalPort":  strconv.Itoa(setting.Config.Port),
-		"RemotePort": strconv.Itoa(setting.Config.Frp.RemotePort),
+		"ProxyName":  proxy.Name,
+		"ProxyType":  proxy.Type,
+		"LocalIP":    proxy.LocalIP,
+		"LocalPort":  strconv.Itoa(proxy.LocalPort),
+		"RemotePort": strconv.Itoa(proxy.RemotePort),
 	}
 	s := os.Expand(FrpConfigTemplate, func(k string) string {
 		return config[k]
@@ -42,23 +118,66 @@ func initFrpConfig() {
 
 func StartFrp() {
 	go func() {
+		base := baseStatus()
+		updateStatus(func(s *RuntimeStatus) {
+			*s = base
+		})
 		if setting.Config.Frp.Enable != 1 {
 			return
 		}
 		initFrpConfig()
-		frpExePath := path.Join(utils.RootDir, "frpc.exe")
+		startTime := time.Now().Format(time.DateTime)
+		updateStatus(func(s *RuntimeStatus) {
+			s.StartTime = startTime
+		})
+		frpExePath := base.FrpcPath
 		if _, err := os.Stat(frpExePath); os.IsNotExist(err) {
 			log.Println("启动frpc失败: " + frpExePath + "不存在")
+			updateStatus(func(s *RuntimeStatus) {
+				s.LastError = "frpc.exe not found"
+			})
 			return
 		}
-		configPath := path.Join(utils.RootDir, "frpc.ini")
+		configPath := base.ConfigPath
+		logFile, err := os.OpenFile(base.LogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			log.Println("frp日志文件打开失败", err)
+			updateStatus(func(s *RuntimeStatus) {
+				s.LastError = err.Error()
+			})
+			return
+		}
 		cmd := exec.Command(frpExePath, "-c", configPath)
 		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		cmd.Stdout = logFile
+		cmd.Stderr = logFile
 		log.Println("start launch frpc")
-		err := cmd.Start()
+		err = cmd.Start()
 		if err != nil {
-			log.Fatalln("frp启动失败", err)
+			log.Println("frp启动失败", err)
+			updateStatus(func(s *RuntimeStatus) {
+				s.LastError = err.Error()
+				s.Running = false
+			})
+			_ = logFile.Close()
+			return
 		}
+		updateStatus(func(s *RuntimeStatus) {
+			s.Running = true
+			if cmd.Process != nil {
+				s.PID = cmd.Process.Pid
+			}
+		})
+		_ = logFile.Close()
+		go func() {
+			waitErr := cmd.Wait()
+			updateStatus(func(s *RuntimeStatus) {
+				s.Running = false
+				if waitErr != nil {
+					s.LastError = waitErr.Error()
+				}
+			})
+		}()
 	}()
 
 }

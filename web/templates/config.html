@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>配置管理</title>
+    <script src="/static/js/vue.js"></script>
+    <link rel="stylesheet" href="/static/css/antd.min.css" />
+    <script src="/static/js/moment.js"></script>
+    <script src="/static/js/antd.min.js"></script>
+</head>
+<body>
+
+<div id="app">
+    <div class="top-nav">
+        <a-menu v-model="current" mode="horizontal" @click="menuClick">
+            <a-menu-item key="logs">
+                通知记录
+            </a-menu-item>
+            <a-menu-item key="config">
+                配置管理
+            </a-menu-item>
+        </a-menu>
+    </div>
+
+    <div class="page">
+        <a-spin :spinning="loading">
+            <a-card title="基础配置" class="section">
+                <div class="field-row">
+                    <div class="field">
+                        <div class="label">调试</div>
+                        <a-switch :checked="config.debug === 1" @change="setDebug"></a-switch>
+                    </div>
+                    <div class="field">
+                        <div class="label">服务端口</div>
+                        <a-input-number v-model="config.port" :min="1" :max="65535" style="width: 100%"></a-input-number>
+                    </div>
+                </div>
+            </a-card>
+
+            <a-card title="通知图标" class="section">
+                <div class="actions">
+                    <a-button @click="addIconRow">新增一行</a-button>
+                    <a-button type="primary" @click="triggerUpload" :loading="uploading">上传图标</a-button>
+                    <a-select v-model="selectedIcon" placeholder="选择已有图标" style="min-width: 220px">
+                        <a-select-option v-for="icon in availableIcons" :key="icon" :value="icon">
+                            ${ icon }
+                        </a-select-option>
+                    </a-select>
+                    <a-button @click="addSelectedIcon">添加</a-button>
+                    <input ref="fileInput" class="hidden-input" type="file" accept=".png,.jpg,.jpeg,.ico" @change="uploadIcon">
+                </div>
+                <div class="icon-list" v-if="config.toast.icons.length">
+                    <div class="icon-row" v-for="(icon, index) in config.toast.icons" :key="index">
+                        <img v-if="icon" :src="iconPreview(icon)" class="icon-preview" @error="onPreviewError">
+                        <div v-else class="icon-placeholder">无预览</div>
+                        <a-input v-model="config.toast.icons[index]" placeholder="logo.png"></a-input>
+                        <a-button type="danger" @click="removeIcon(index)">移除</a-button>
+                    </div>
+                </div>
+                <div class="icon-empty" v-else>暂无图标配置</div>
+                <div class="hint">图标文件保存在配置目录 images 下，支持 .png/.jpg/.jpeg/.ico。</div>
+            </a-card>
+
+            <a-card title="FRP 配置" class="section">
+                <div class="field-row">
+                    <div class="field">
+                        <div class="label">启用</div>
+                        <a-switch :checked="config.frp.enable === 1" @change="setFrpEnable"></a-switch>
+                    </div>
+                </div>
+                <div class="field-row">
+                    <div class="field">
+                        <div class="label">服务地址</div>
+                        <a-input v-model="config.frp.server_addr" placeholder="例如: 123.123.1.2"></a-input>
+                    </div>
+                    <div class="field">
+                        <div class="label">服务端口</div>
+                        <a-input-number v-model="config.frp.server_port" :min="1" :max="65535" style="width: 100%"></a-input-number>
+                    </div>
+                </div>
+                <div class="field-row">
+                    <div class="field field-full">
+                        <div class="label">Token</div>
+                        <a-input v-model="config.frp.token"></a-input>
+                    </div>
+                </div>
+
+                <div class="sub-title">代理</div>
+                <div class="field-row">
+                    <div class="field">
+                        <div class="label">名称</div>
+                        <a-input v-model="config.frp.proxy.name" placeholder="http-win-notice"></a-input>
+                    </div>
+                    <div class="field">
+                        <div class="label">类型</div>
+                        <a-select v-model="config.frp.proxy.type" style="width: 100%">
+                            <a-select-option value="tcp">tcp</a-select-option>
+                            <a-select-option value="udp">udp</a-select-option>
+                            <a-select-option value="http">http</a-select-option>
+                            <a-select-option value="https">https</a-select-option>
+                        </a-select>
+                    </div>
+                </div>
+                <div class="field-row">
+                    <div class="field">
+                        <div class="label">本地 IP</div>
+                        <a-input v-model="config.frp.proxy.local_ip" placeholder="127.0.0.1"></a-input>
+                    </div>
+                    <div class="field">
+                        <div class="label">本地端口</div>
+                        <a-input-number v-model="config.frp.proxy.local_port" :min="1" :max="65535" style="width: 100%"></a-input-number>
+                    </div>
+                    <div class="field">
+                        <div class="label">远端端口</div>
+                        <a-input-number v-model="config.frp.proxy.remote_port" :min="1" :max="65535" style="width: 100%"></a-input-number>
+                    </div>
+                </div>
+            </a-card>
+
+            <a-card title="FRP 运行状态" class="section">
+                <template slot="extra">
+                    <a-button size="small" @click="refreshFrpStatus" :loading="frpStatusLoading">刷新</a-button>
+                </template>
+                <div class="status-row">
+                    <a-tag :color="frpStatus.enabled ? 'green' : 'default'">
+                        ${ frpStatus.enabled ? '已启用' : '未启用' }
+                    </a-tag>
+                    <a-tag :color="frpStatus.running ? 'green' : 'red'">
+                        ${ frpStatus.running ? '运行中' : '未运行' }
+                    </a-tag>
+                    <span class="hint" v-if="frpStatus.start_time">启动时间: ${ frpStatus.start_time }</span>
+                </div>
+                <div class="status-grid">
+                    <div class="status-item">
+                        <div class="label">PID</div>
+                        <div class="value">${ frpStatus.pid || '-' }</div>
+                    </div>
+                    <div class="status-item status-item-wide">
+                        <div class="label">frpc.exe</div>
+                        <div class="value mono">${ frpStatus.frpc_path || '-' }</div>
+                    </div>
+                    <div class="status-item status-item-wide">
+                        <div class="label">配置文件</div>
+                        <div class="value mono">${ frpStatus.config_path || '-' }</div>
+                    </div>
+                    <div class="status-item status-item-wide">
+                        <div class="label">日志文件</div>
+                        <div class="value mono">${ frpStatus.log_path || '-' }</div>
+                    </div>
+                </div>
+                <div class="status-error" v-if="frpStatus.last_error">
+                    <div class="label">最近错误</div>
+                    <div class="value error-text">${ frpStatus.last_error }</div>
+                </div>
+            </a-card>
+
+            <a-card title="FRP 日志" class="section">
+                <template slot="extra">
+                    <a-button size="small" @click="refreshFrpLogs" :loading="frpLogLoading">刷新</a-button>
+                </template>
+                <div class="actions">
+                    <div class="label">日志行数</div>
+                    <a-input-number v-model="frpLogLines" :min="20" :max="1000"></a-input-number>
+                    <a-button @click="refreshFrpLogs" :loading="frpLogLoading">加载</a-button>
+                    <span class="hint" v-if="frpStatus.log_path">文件: ${ frpStatus.log_path }</span>
+                </div>
+                <pre class="log-box">${ frpLogsText }</pre>
+            </a-card>
+
+            <div class="footer-actions">
+                <a-button type="primary" @click="saveConfig" :loading="saving">保存配置</a-button>
+                <span class="hint">保存后需要重启程序生效</span>
+            </div>
+        </a-spin>
+    </div>
+</div>
+
+</body>
+<script>
+    function buildDefaultConfig(){
+        return {
+            debug: 0,
+            port: 19000,
+            toast: {
+                icons: []
+            },
+            frp: {
+                enable: 0,
+                server_addr: "",
+                server_port: 7000,
+                token: "",
+                proxy: {
+                    name: "http-win-notice",
+                    type: "tcp",
+                    local_ip: "127.0.0.1",
+                    local_port: 19000,
+                    remote_port: 19001
+                }
+            }
+        }
+    }
+
+    function buildDefaultFrpStatus(){
+        return {
+            enabled: false,
+            running: false,
+            pid: 0,
+            start_time: "",
+            last_error: "",
+            frpc_path: "",
+            config_path: "",
+            log_path: ""
+        }
+    }
+
+    new Vue({
+        el: "#app",
+        delimiters:["${", "}"],
+        data(){
+            return{
+                loading: true,
+                saving: false,
+                uploading: false,
+                frpStatusLoading: false,
+                frpLogLoading: false,
+                current: ["config"],
+                selectedIcon: "",
+                imagesUrlPrefix: "/images/",
+                availableIcons: [],
+                config: buildDefaultConfig(),
+                frpStatus: buildDefaultFrpStatus(),
+                frpLogs: [],
+                frpLogLines: 200,
+                frpLogMessage: ""
+            }
+        },
+        mounted(){
+            this.fetchConfig();
+            this.refreshFrp();
+        },
+        computed:{
+            frpLogsText(){
+                if(this.frpLogs && this.frpLogs.length){
+                    return this.frpLogs.join("\n");
+                }
+                return this.frpLogMessage || "暂无日志";
+            }
+        },
+        methods:{
+            defaultConfig(){
+                return buildDefaultConfig();
+            },
+            defaultFrpStatus(){
+                return buildDefaultFrpStatus();
+            },
+            normalizeFrpStatus(status){
+                const next = status || this.defaultFrpStatus();
+                if(typeof next.enabled !== "boolean"){
+                    next.enabled = false;
+                }
+                if(typeof next.running !== "boolean"){
+                    next.running = false;
+                }
+                if(typeof next.pid !== "number"){
+                    next.pid = 0;
+                }
+                if(typeof next.start_time !== "string"){
+                    next.start_time = "";
+                }
+                if(typeof next.last_error !== "string"){
+                    next.last_error = "";
+                }
+                if(typeof next.frpc_path !== "string"){
+                    next.frpc_path = "";
+                }
+                if(typeof next.config_path !== "string"){
+                    next.config_path = "";
+                }
+                if(typeof next.log_path !== "string"){
+                    next.log_path = "";
+                }
+                return next;
+            },
+            normalizeConfig(config){
+                const next = config || this.defaultConfig();
+                if(!next.port){
+                    next.port = 19000;
+                }
+                if(typeof next.debug !== "number"){
+                    next.debug = 0;
+                }
+                next.toast = next.toast || { icons: [] };
+                if(!Array.isArray(next.toast.icons)){
+                    next.toast.icons = [];
+                }
+                next.frp = next.frp || {};
+                if(typeof next.frp.enable !== "number"){
+                    next.frp.enable = 0;
+                }
+                if(!next.frp.server_addr){
+                    next.frp.server_addr = "";
+                }
+                if(!next.frp.server_port){
+                    next.frp.server_port = 7000;
+                }
+                if(typeof next.frp.token !== "string"){
+                    next.frp.token = "";
+                }
+                next.frp.proxy = next.frp.proxy || {};
+                if(!next.frp.proxy.name){
+                    next.frp.proxy.name = "http-win-notice";
+                }
+                if(!next.frp.proxy.type){
+                    next.frp.proxy.type = "tcp";
+                }
+                if(!next.frp.proxy.local_ip){
+                    next.frp.proxy.local_ip = "127.0.0.1";
+                }
+                if(!next.frp.proxy.local_port){
+                    next.frp.proxy.local_port = next.port;
+                }
+                if(!next.frp.proxy.remote_port){
+                    next.frp.proxy.remote_port = 19001;
+                }
+                return next;
+            },
+            fetchConfig(){
+                this.loading = true;
+                fetch("/api/config")
+                    .then(res => res.json())
+                    .then(data => {
+                        if(data && data.config){
+                            this.config = this.normalizeConfig(data.config);
+                        }else{
+                            this.config = this.defaultConfig();
+                        }
+                        if(data && Array.isArray(data.available_icons)){
+                            this.availableIcons = data.available_icons;
+                        }
+                        if(data && data.images_url_prefix){
+                            this.imagesUrlPrefix = data.images_url_prefix;
+                        }
+                    })
+                    .catch(() => {
+                        this.notify("配置加载失败", "error");
+                    })
+                    .finally(() => {
+                        this.loading = false;
+                    })
+            },
+            fetchFrpStatus(){
+                this.frpStatusLoading = true;
+                fetch("/api/frp/status")
+                    .then(res => res.json())
+                    .then(data => {
+                        this.frpStatus = this.normalizeFrpStatus(data);
+                    })
+                    .catch(() => {
+                        this.notify("FRP 状态获取失败", "error");
+                    })
+                    .finally(() => {
+                        this.frpStatusLoading = false;
+                    })
+            },
+            fetchFrpLogs(){
+                this.frpLogLoading = true;
+                const lines = this.frpLogLines || 200;
+                fetch("/api/frp/logs?lines=" + lines)
+                    .then(res => res.json())
+                    .then(data => {
+                        if(data && Array.isArray(data.logs)){
+                            this.frpLogs = data.logs;
+                        }else{
+                            this.frpLogs = [];
+                        }
+                        this.frpLogMessage = data && data.message ? data.message : "";
+                        if(data && data.log_path){
+                            this.frpStatus.log_path = data.log_path;
+                        }
+                    })
+                    .catch(() => {
+                        this.frpLogMessage = "";
+                        this.frpLogs = [];
+                        this.notify("FRP 日志获取失败", "error");
+                    })
+                    .finally(() => {
+                        this.frpLogLoading = false;
+                    })
+            },
+            refreshFrpStatus(){
+                this.fetchFrpStatus();
+            },
+            refreshFrpLogs(){
+                this.fetchFrpLogs();
+            },
+            refreshFrp(){
+                this.fetchFrpStatus();
+                this.fetchFrpLogs();
+            },
+            saveConfig(){
+                this.saving = true;
+                fetch("/api/config", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(this.config)
+                })
+                    .then(res => res.json())
+                    .then(data => {
+                        if(data && data.message === "success"){
+                            this.notify("配置已保存，重启后生效", "success");
+                            this.refreshFrpStatus();
+                        }else{
+                            this.notify((data && data.message) || "保存失败", "error");
+                        }
+                    })
+                    .catch(() => {
+                        this.notify("保存失败", "error");
+                    })
+                    .finally(() => {
+                        this.saving = false;
+                    })
+            },
+            addIconRow(){
+                this.config.toast.icons.push("");
+            },
+            addSelectedIcon(){
+                if(!this.selectedIcon){
+                    return;
+                }
+                this.addIconName(this.selectedIcon);
+                this.selectedIcon = "";
+            },
+            removeIcon(index){
+                this.config.toast.icons.splice(index, 1);
+            },
+            iconPreview(icon){
+                return this.imagesUrlPrefix + encodeURIComponent(icon);
+            },
+            onPreviewError(e){
+                e.target.style.display = "none";
+            },
+            triggerUpload(){
+                if(this.$refs.fileInput){
+                    this.$refs.fileInput.click();
+                }
+            },
+            uploadIcon(e){
+                const file = e.target.files && e.target.files.length ? e.target.files[0] : null;
+                if(!file){
+                    return;
+                }
+                const formData = new FormData();
+                formData.append("file", file);
+                this.uploading = true;
+                fetch("/api/config/icon/upload", {
+                    method: "POST",
+                    body: formData
+                })
+                    .then(res => res.json())
+                    .then(data => {
+                        if(data && data.filename){
+                            this.addIconName(data.filename);
+                            if(this.availableIcons.indexOf(data.filename) === -1){
+                                this.availableIcons.push(data.filename);
+                            }
+                            this.notify("上传成功", "success");
+                        }else{
+                            this.notify((data && data.message) || "上传失败", "error");
+                        }
+                    })
+                    .catch(() => {
+                        this.notify("上传失败", "error");
+                    })
+                    .finally(() => {
+                        this.uploading = false;
+                        e.target.value = "";
+                    })
+            },
+            addIconName(name){
+                const trimmed = (name || "").trim();
+                if(!trimmed){
+                    return;
+                }
+                if(this.config.toast.icons.indexOf(trimmed) === -1){
+                    this.config.toast.icons.push(trimmed);
+                }
+            },
+            setDebug(checked){
+                this.config.debug = checked ? 1 : 0;
+            },
+            setFrpEnable(checked){
+                this.config.frp.enable = checked ? 1 : 0;
+            },
+            menuClick(e){
+                if(e.key === "logs"){
+                    window.location.href = "/";
+                    return;
+                }
+                if(e.key === "config"){
+                    window.location.href = "/config";
+                }
+            },
+            notify(message, type){
+                if(this.$message && this.$message[type]){
+                    this.$message[type](message);
+                    return;
+                }
+                alert(message);
+            }
+        }
+    })
+</script>
+<style>
+    body{
+        margin: 0;
+        background: #fafafa;
+    }
+    .top-nav{
+        background: #fff;
+        border-bottom: 1px solid #f0f0f0;
+    }
+    .page{
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 16px;
+    }
+    .section{
+        margin-bottom: 16px;
+    }
+    .field-row{
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+    }
+    .field{
+        flex: 1;
+        min-width: 220px;
+    }
+    .field-full{
+        flex: 1 1 100%;
+    }
+    .label{
+        margin-bottom: 6px;
+        color: rgba(0,0,0,0.65);
+        font-size: 13px;
+    }
+    .sub-title{
+        margin: 12px 0 8px;
+        font-weight: 500;
+    }
+    .actions{
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+    }
+    .hidden-input{
+        display: none;
+    }
+    .icon-list{
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    .icon-row{
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .icon-preview{
+        width: 40px;
+        height: 40px;
+        object-fit: contain;
+        border: 1px solid #f0f0f0;
+        background: #fff;
+        padding: 4px;
+    }
+    .icon-placeholder{
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px dashed #d9d9d9;
+        background: #fafafa;
+        font-size: 12px;
+        color: rgba(0,0,0,0.45);
+    }
+    .icon-empty{
+        color: rgba(0,0,0,0.45);
+        margin-bottom: 8px;
+    }
+    .status-row{
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+    }
+    .status-grid{
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+    }
+    .status-item{
+        flex: 1;
+        min-width: 220px;
+    }
+    .status-item-wide{
+        flex: 1 1 100%;
+    }
+    .value{
+        color: rgba(0,0,0,0.85);
+        word-break: break-all;
+    }
+    .value.mono{
+        font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, Courier, monospace;
+    }
+    .status-error{
+        margin-top: 8px;
+    }
+    .error-text{
+        color: #cf1322;
+    }
+    .log-box{
+        background: #0f1116;
+        color: #d7d9e0;
+        border-radius: 6px;
+        padding: 12px;
+        font-size: 12px;
+        line-height: 1.5;
+        max-height: 280px;
+        overflow: auto;
+        white-space: pre-wrap;
+    }
+    .footer-actions{
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding-bottom: 24px;
+    }
+    .hint{
+        color: rgba(0,0,0,0.45);
+        font-size: 12px;
+    }
+</style>
+</html>
