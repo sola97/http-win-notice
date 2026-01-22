@@ -23,6 +23,10 @@
         </a-menu>
     </div>
 
+    <div class="log-actions">
+        <a-button type="danger" @click="clearLogs" :loading="clearing">清理历史记录</a-button>
+    </div>
+
     <div class="log-table">
         <a-table
             :key="tableKey"
@@ -93,6 +97,7 @@
                 tableKey:0,
                 viewHeight:1080,
                 testMsg:"",
+                clearing:false,
                 current: ['logs'],
                 pagination:{
                     current: currentPage,
@@ -118,12 +123,13 @@
                     // let allPaddingHeight = 15 + 5;
                     let tableHeadHeight = getEmHeightByClass("ant-table-thead");
                     let topNavHeight = getEmHeightByClass("top-nav");
+                    let logActionsHeight = getEmHeightByClass("log-actions");
                     // let dateSearchHeight = getEmHeightByClass("top-date-picker");
                     // console.log('dateSearchHeight=',dateSearchHeight)
                     let paginationHeight = getEmHeightByClass('ant-table-pagination');
                     // let paginationAllMarginHeight = 16 * 2;
 
-                    this.viewHeight = document.body.clientHeight - tableHeadHeight - paginationHeight - topNavHeight;
+                    this.viewHeight = document.body.clientHeight - tableHeadHeight - paginationHeight - topNavHeight - logActionsHeight;
                     this.tableKey+=1;
                     console.log('viewHeight=', this.viewHeight)
                 })
@@ -137,11 +143,47 @@
                     window.location.href = "/"
                 }
             },
+            clearLogs(){
+                if(!window.confirm("确定清理全部历史记录？")){
+                    return
+                }
+                this.clearing = true;
+                fetch("/api/logs/clear", { method: "POST" })
+                    .then(res => res.json())
+                    .then(data => {
+                        if(data && data.message === "success"){
+                            this.notify("历史记录已清理", "success");
+                            window.location.href = "/";
+                        }else{
+                            this.notify((data && data.message) || "清理失败", "error");
+                        }
+                    })
+                    .catch(() => {
+                        this.notify("清理失败", "error");
+                    })
+                    .finally(() => {
+                        this.clearing = false;
+                    })
+            },
+            notify(message, type){
+                if(this.$message && this.$message[type]){
+                    this.$message[type](message);
+                    return
+                }
+                alert(message);
+            },
         }
     })
 </script>
 <style>
     .top-nav{
+        background: #fff;
+        border-bottom: 1px solid #f0f0f0;
+    }
+    .log-actions{
+        display: flex;
+        justify-content: flex-end;
+        padding: 12px 16px;
         background: #fff;
         border-bottom: 1px solid #f0f0f0;
     }

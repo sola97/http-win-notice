@@ -50,6 +50,15 @@
                     <a-button @click="addSelectedIcon">添加</a-button>
                     <input ref="fileInput" class="hidden-input" type="file" accept=".png,.jpg,.jpeg,.ico" @change="uploadIcon">
                 </div>
+                <div class="upload-dropzone"
+                     :class="{ 'is-active': dropActive }"
+                     @click="triggerUpload"
+                     @dragover.prevent="onDragOver"
+                     @dragleave.prevent="onDragLeave"
+                     @drop.prevent="onDrop">
+                    <div class="drop-title">拖拽图标到此处上传</div>
+                    <div class="drop-hint">支持 .png/.jpg/.jpeg/.ico，点击可选择文件</div>
+                </div>
                 <div class="icon-list" v-if="config.toast.icons.length">
                     <div class="icon-row" v-for="(icon, index) in config.toast.icons" :key="index">
                         <img v-if="icon" :src="iconPreview(icon)" class="icon-preview" @error="onPreviewError">
@@ -134,6 +143,19 @@
                         <a-input-number v-model="config.frp.proxy.remote_port" :min="1" :max="65535" style="width: 100%"></a-input-number>
                     </div>
                 </div>
+
+                <div class="sub-title">公网调用</div>
+                <div class="public-url">
+                    <div class="label">GET URL</div>
+                    <a-input class="public-input" :value="frpPublicUrl" readonly></a-input>
+                    <a-button @click="copyText(frpPublicUrl, 'URL')" :disabled="!frpPublicUrl">复制</a-button>
+                </div>
+                <div class="public-url">
+                    <div class="label">POST JSON</div>
+                    <a-input class="public-input" :value="frpPublicJson" readonly></a-input>
+                    <a-button @click="copyText(frpPublicJson, 'JSON')" :disabled="!frpPublicJson">复制</a-button>
+                </div>
+                <div class="hint">msg 使用 [msg] 作为占位符</div>
             </a-card>
 
             <a-card title="FRP 运行状态" class="section">
@@ -184,6 +206,28 @@
                     <span class="hint" v-if="frpStatus.log_path">文件: ${ frpStatus.log_path }</span>
                 </div>
                 <pre class="log-box">${ frpLogsText }</pre>
+            </a-card>
+
+            <a-card title="系统自检" class="section">
+                <template slot="extra">
+                    <a-button size="small" @click="runSelfCheck" :loading="selfCheckLoading">运行</a-button>
+                </template>
+                <div class="status-row" v-if="selfCheck">
+                    <a-tag :color="selfCheck.ok ? 'green' : 'red'">
+                        ${ selfCheck.ok ? '通过' : '异常' }
+                    </a-tag>
+                    <span class="hint">时间: ${ selfCheck.time || '-' }</span>
+                </div>
+                <div class="check-list" v-if="selfCheck && selfCheck.checks">
+                    <div class="check-item" v-for="(item, key) in selfCheck.checks" :key="key">
+                        <a-tag :color="item.ok ? 'green' : 'red'">
+                            ${ item.ok ? '正常' : '异常' }
+                        </a-tag>
+                        <span class="label">${ key }</span>
+                        <span class="hint" v-if="item.message">${ item.message }</span>
+                    </div>
+                </div>
+                <div class="hint" v-else>点击运行自检查看结果</div>
             </a-card>
 
             <div class="footer-actions">
@@ -241,8 +285,10 @@
                 loading: true,
                 saving: false,
                 uploading: false,
+                dropActive: false,
                 frpStatusLoading: false,
                 frpLogLoading: false,
+                selfCheckLoading: false,
                 current: ["config"],
                 selectedIcon: "",
                 imagesUrlPrefix: "/images/",
@@ -252,7 +298,8 @@
                 frpStatus: buildDefaultFrpStatus(),
                 frpLogs: [],
                 frpLogLines: 200,
-                frpLogMessage: ""
+                frpLogMessage: "",
+                selfCheck: null
             }
         },
         mounted(){
@@ -265,6 +312,20 @@
                     return this.frpLogs.join("\n");
                 }
                 return this.frpLogMessage || "暂无日志";
+            },
+            frpPublicUrl(){
+                const frp = this.config && this.config.frp ? this.config.frp : {};
+                const proxy = frp.proxy || {};
+                const addr = (frp.server_addr || "").trim();
+                const port = proxy.remote_port || 0;
+                if(!addr || !port){
+                    return "";
+                }
+                const scheme = proxy.type === "https" ? "https" : "http";
+                return scheme + "://" + addr + ":" + port + "/api/toast?msg=[msg]";
+            },
+            frpPublicJson(){
+                return JSON.stringify({ msg: "[msg]" });
             }
         },
         methods:{
@@ -475,15 +536,52 @@
                     this.$refs.fileInput.click();
                 }
             },
+            onDragOver(){
+                this.dropActive = true;
+            },
+            onDragLeave(){
+                this.dropActive = false;
+            },
+            onDrop(e){
+                this.dropActive = false;
+                const files = e.dataTransfer && e.dataTransfer.files ? Array.from(e.dataTransfer.files) : [];
+                if(!files.length){
+                    return;
+                }
+                this.uploadFiles(files);
+            },
             uploadIcon(e){
                 const file = e.target.files && e.target.files.length ? e.target.files[0] : null;
                 if(!file){
                     return;
                 }
+                this.uploadFiles([file]).finally(() => {
+                    e.target.value = "";
+                });
+            },
+            uploadFiles(files){
+                if(this.uploading){
+                    this.notify("正在上传，请稍后", "warning");
+                    return Promise.resolve();
+                }
+                const validFiles = (files || []).filter(file => this.isAllowedIconFile(file.name));
+                if(!validFiles.length){
+                    this.notify("没有可上传的图标文件", "warning");
+                    return Promise.resolve();
+                }
+                this.uploading = true;
+                let chain = Promise.resolve();
+                validFiles.forEach(file => {
+                    chain = chain.then(() => this.uploadIconFile(file));
+                });
+                return chain.finally(() => {
+                    this.uploading = false;
+                });
+            },
+            uploadIconFile(file){
                 const formData = new FormData();
                 formData.append("file", file);
-                this.uploading = true;
-                fetch("/api/config/icon/upload", {
+                return fetch("/api/config/icon/upload", {
                     method: "POST",
                     body: formData
                 })
@@ -502,11 +600,14 @@
                     })
                     .catch(() => {
                         this.notify("上传失败", "error");
-                    })
-                    .finally(() => {
-                        this.uploading = false;
-                        e.target.value = "";
-                    })
+                    });
+            },
+            isAllowedIconFile(name){
+                const lower = (name || "").toLowerCase();
+                return lower.endsWith(".png")
+                    || lower.endsWith(".jpg")
+                    || lower.endsWith(".jpeg")
+                    || lower.endsWith(".ico");
             },
             addIconName(name){
                 const trimmed = (name || "").trim();
@@ -573,6 +674,60 @@
                     window.location.href = "/config";
                 }
             },
+            copyText(text, label){
+                const value = (text || "").trim();
+                if(!value){
+                    this.notify(label + "为空", "warning");
+                    return;
+                }
+                if(navigator && navigator.clipboard && navigator.clipboard.writeText){
+                    navigator.clipboard.writeText(value)
+                        .then(() => {
+                            this.notify(label + "已复制", "success");
+                        })
+                        .catch(() => {
+                            this.fallbackCopy(value, label);
+                        });
+                    return;
+                }
+                this.fallbackCopy(value, label);
+            },
+            fallbackCopy(value, label){
+                const textarea = document.createElement("textarea");
+                textarea.value = value;
+                textarea.setAttribute("readonly", "");
+                textarea.style.position = "absolute";
+                textarea.style.left = "-9999px";
+                document.body.appendChild(textarea);
+                textarea.select();
+                try{
+                    document.execCommand("copy");
+                    this.notify(label + "已复制", "success");
+                }catch(e){
+                    this.notify(label + "复制失败", "error");
+                }
+                document.body.removeChild(textarea);
+            },
+            runSelfCheck(){
+                this.selfCheckLoading = true;
+                fetch("/api/self-check")
+                    .then(res => res.json())
+                    .then(data => {
+                        if(data && typeof data.ok === "boolean"){
+                            this.selfCheck = data;
+                        }else{
+                            this.selfCheck = null;
+                            this.notify("自检失败", "error");
+                        }
+                    })
+                    .catch(() => {
+                        this.selfCheck = null;
+                        this.notify("自检失败", "error");
+                    })
+                    .finally(() => {
+                        this.selfCheckLoading = false;
+                    })
+            },
             notify(message, type){
                 if(this.$message && this.$message[type]){
                     this.$message[type](message);
@@ -631,6 +786,29 @@
     .hidden-input{
         display: none;
     }
+    .upload-dropzone{
+        border: 1px dashed #d9d9d9;
+        border-radius: 6px;
+        padding: 14px;
+        background: #fafafa;
+        text-align: center;
+        color: rgba(0,0,0,0.65);
+        cursor: pointer;
+        margin-bottom: 12px;
+    }
+    .upload-dropzone.is-active{
+        border-color: #1890ff;
+        background: #e6f7ff;
+        color: rgba(0,0,0,0.85);
+    }
+    .drop-title{
+        font-weight: 500;
+        margin-bottom: 4px;
+    }
+    .drop-hint{
+        font-size: 12px;
+        color: rgba(0,0,0,0.45);
+    }
     .icon-list{
         display: flex;
         flex-direction: column;
@@ -680,6 +858,20 @@
         color: rgba(0,0,0,0.45);
         margin-bottom: 8px;
     }
+    .public-url{
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+    }
+    .public-url .label{
+        margin-bottom: 0;
+    }
+    .public-input{
+        flex: 1;
+        min-width: 240px;
+    }
     .status-row{
         display: flex;
         align-items: center;
@@ -722,6 +914,20 @@
         max-height: 280px;
         overflow: auto;
         white-space: pre-wrap;
+    }
+    .check-list{
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    .check-item{
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+    .check-item .label{
+        margin-bottom: 0;
     }
     .footer-actions{
         display: flex;

@@ -8,6 +8,7 @@ import (
 	"http-win-notice/utils/notice"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 type Button struct {
@@ -15,52 +16,43 @@ type Button struct {
 	Url  string `json:"url"`
 }
 
+type ToastRequest struct {
+	Title    string   `json:"title"`
+	Msg      string   `json:"msg"`
+	Remark   string   `json:"remark"`
+	Icon     string   `json:"icon"`
+	Duration string   `json:"duration"`
+	Audio    string   `json:"audio"`
+	Button   []Button `json:"button"`
+}
+
 func ToastApi(c *gin.Context) {
-	msg := c.DefaultQuery("msg", constant.DefaultMsg)
-	title := c.DefaultQuery("title", constant.DefaultTitle)
-	icon := c.DefaultQuery("icon", constant.DefaultIcon)
-	duration := c.DefaultQuery("duration", string(constant.DefaultDuration))
-	audio := c.DefaultQuery("audio", string(constant.DefaultAudio))
+	req := ToastRequest{
+		Msg:      c.DefaultQuery("msg", constant.DefaultMsg),
+		Title:    c.DefaultQuery("title", constant.DefaultTitle),
+		Icon:     c.DefaultQuery("icon", constant.DefaultIcon),
+		Duration: c.DefaultQuery("duration", constant.DefaultDuration),
+		Audio:    c.DefaultQuery("audio", constant.DefaultAudio),
+		Remark:   c.Query("remark"),
+	}
 	button := c.DefaultQuery("button", "")
-
-	remark := c.Query("remark")
-
-	var buttonData []Button
-	var actions []notice.Action
-	err := json.Unmarshal([]byte(button), &buttonData)
-	if err == nil {
-		for _, bt := range buttonData {
-			action := notice.Action{
-				Type:      "protocol",
-				Label:     bt.Name,
-				Arguments: bt.Url,
-			}
-			actions = append(actions, action)
-		}
+	if button != "" {
+		_ = json.Unmarshal([]byte(button), &req.Button)
 	}
-	data := model.Msg{
-		Title:  title,
-		Msg:    msg,
-		Remark: remark,
-	}
-	res := model.CreateMsg(&data)
-	if !res {
+	normalizeToastRequest(&req)
+	handleToastRequest(c, req)
+}
+
+func ToastPostApi(c *gin.Context) {
+	var req ToastRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "fail, db error",
+			"message": "invalid request body",
 		})
 		return
 	}
-	go func() {
-		err := notice.Notice(msg, title, icon, duration, audio, actions)
-		if err != nil {
-			model.UpdateMsgStatus(data.ID, 9)
-		} else {
-			model.UpdateMsgStatus(data.ID, 1)
-		}
-	}()
-	c.JSON(http.StatusOK, gin.H{
-		"message": "success",
-	})
+	normalizeToastRequest(&req)
+	handleToastRequest(c, req)
 }
 
 func HomePage(c *gin.Context) {
@@ -101,4 +93,89 @@ func HomePage(c *gin.Context) {
 		"currentPage": pageInt,
 		"pageSize":    sizeInt,
 	})
+}
+
+func ClearLogsApi(c *gin.Context) {
+	deleted, err := model.ClearMsgAll()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"message": "failed to clear logs",
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message": "success",
+		"deleted": deleted,
+	})
+}
+
+func normalizeToastRequest(req *ToastRequest) {
+	req.Msg = strings.TrimSpace(req.Msg)
+	if req.Msg == "" {
+		req.Msg = constant.DefaultMsg
+	}
+	req.Title = strings.TrimSpace(req.Title)
+	if req.Title == "" {
+		req.Title = constant.DefaultTitle
+	}
+	req.Icon = strings.TrimSpace(req.Icon)
+	if req.Icon == "" {
+		req.Icon = constant.DefaultIcon
+	}
+	req.Duration = strings.TrimSpace(req.Duration)
+	if req.Duration == "" {
+		req.Duration = constant.DefaultDuration
+	}
+	req.Audio = strings.TrimSpace(req.Audio)
+	if req.Audio == "" {
+		req.Audio = constant.DefaultAudio
+	}
+	req.Remark = strings.TrimSpace(req.Remark)
+}
+
+func handleToastRequest(c *gin.Context, req ToastRequest) {
+	actions := actionsFromButtons(req.Button)
+	data := model.Msg{
+		Title:  req.Title,
+		Msg:    req.Msg,
+		Remark: req.Remark,
+	}
+	res := model.CreateMsg(&data)
+	if !res {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "fail, db error",
+		})
+		return
+	}
+	go func() {
+		err := notice.Notice(req.Msg, req.Title, req.Icon, req.Duration, req.Audio, actions)
+		if err != nil {
+			model.UpdateMsgStatus(data.ID, 9)
+		} else {
+			model.UpdateMsgStatus(data.ID, 1)
+		}
+	}()
+	c.JSON(http.StatusOK, gin.H{
+		"message": "success",
+	})
+}
+
+func actionsFromButtons(buttons []Button) []notice.Action {
+	if len(buttons) == 0 {
+		return nil
+	}
+	actions := make([]notice.Action, 0, len(buttons))
+	for _, bt := range buttons {
+		label := strings.TrimSpace(bt.Name)
+		url := strings.TrimSpace(bt.Url)
+		if label == "" || url == "" {
+			continue
+		}
+		actions = append(actions, notice.Action{
+			Type:      "protocol",
+			Label:     label,
+			Arguments: url,
+		})
+	}
+	return actions
 }

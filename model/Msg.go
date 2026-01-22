@@ -41,3 +41,8 @@ func TotalMsg() int64 {
 	}
 	return total
 }
+
+func ClearMsgAll() (int64, error) {
+	result := db.Session(&gorm.Session{AllowGlobalUpdate: true}).Unscoped().Delete(&Msg{})
+	return result.RowsAffected, result.Error
+}

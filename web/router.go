@@ -30,11 +30,14 @@ func InitRouters(r *gin.Engine) {
 	//r.Static("/static", "./web/static")
 
 	r.GET("/api/toast", api.ToastApi)
+	r.POST("/api/toast", api.ToastPostApi)
 	r.GET("/api/config", api.GetConfigApi)
 	r.POST("/api/config", api.UpdateConfigApi)
 	r.POST("/api/config/icon/upload", api.UploadIconApi)
 	r.GET("/api/frp/status", api.GetFrpStatusApi)
 	r.GET("/api/frp/logs", api.GetFrpLogsApi)
+	r.GET("/api/self-check", api.SelfCheckApi)
+	r.POST("/api/logs/clear", api.ClearLogsApi)
 	r.GET("/", api.HomePage)
 	r.GET("/config", api.ConfigPage)
 }
