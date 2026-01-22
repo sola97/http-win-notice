@@ -64,7 +64,7 @@
                 <div class="sub-title">图标别名</div>
                 <div class="actions">
                     <a-button @click="addIconAliasRow">新增别名</a-button>
-                    <span class="hint">HTTP 参数示例: icon=default 或 icon=logo.png</span>
+                    <span class="hint">HTTP 参数示例: icon=default 或 icon=logo（可省略扩展名）</span>
                 </div>
                 <div class="alias-list" v-if="iconAliasList.length">
                     <div class="alias-row" v-for="(alias, index) in iconAliasList" :key="index">

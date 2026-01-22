@@ -129,35 +129,24 @@ func resolveIconFile(icon string) string {
 		return pickDefaultIconFile()
 	}
 	if file, ok := setting.Config.Toast.IconMap[icon]; ok {
-		file = normalizeIconName(file)
-		if isAllowedIconExt(file) && iconFileExists(file) {
-			return file
+		if resolved, ok := resolveIconFromName(file); ok {
+			return resolved
 		}
 	}
-	for _, candidate := range setting.Config.Toast.Icons {
-		if candidate == icon {
-			file := normalizeIconName(candidate)
-			if isAllowedIconExt(file) && iconFileExists(file) {
-				return file
-			}
-		}
-	}
-	file := normalizeIconName(icon)
-	if file != "" && isAllowedIconExt(file) && iconFileExists(file) {
-		return file
+	if resolved, ok := resolveIconFromName(icon); ok {
+		return resolved
 	}
 	return pickDefaultIconFile()
 }
 
 func pickDefaultIconFile() string {
 	for _, candidate := range setting.Config.Toast.Icons {
-		file := normalizeIconName(candidate)
-		if isAllowedIconExt(file) && iconFileExists(file) {
-			return file
+		if resolved, ok := resolveIconFromName(candidate); ok {
+			return resolved
 		}
 	}
-	if iconFileExists("logo.png") {
-		return "logo.png"
+	if resolved, ok := resolveIconFromName("logo.png"); ok {
+		return resolved
 	}
 	if len(setting.Config.Toast.Icons) > 0 {
 		file := normalizeIconName(setting.Config.Toast.Icons[0])
@@ -186,10 +175,33 @@ func iconFileExists(name string) bool {
 }
 
 func isAllowedIconExt(name string) bool {
-	switch strings.ToLower(path.Ext(name)) {
-	case ".png", ".jpg", ".jpeg", ".ico":
-		return true
-	default:
-		return false
+	ext := strings.ToLower(path.Ext(name))
+	for _, allowed := range allowedIconExts {
+		if ext == allowed {
+			return true
+		}
 	}
+	return false
+}
+
+var allowedIconExts = []string{".png", ".jpg", ".jpeg", ".ico"}
+
+func resolveIconFromName(name string) (string, bool) {
+	name = normalizeIconName(name)
+	if name == "" {
+		return "", false
+	}
+	if isAllowedIconExt(name) {
+		if iconFileExists(name) {
+			return name, true
+		}
+		return "", false
+	}
+	for _, ext := range allowedIconExts {
+		candidate := name + ext
+		if iconFileExists(candidate) {
+			return candidate, true
+		}
+	}
+	return "", false
 }
