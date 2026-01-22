@@ -60,6 +60,24 @@
                 </div>
                 <div class="icon-empty" v-else>暂无图标配置</div>
                 <div class="hint">图标文件保存在配置目录 images 下，支持 .png/.jpg/.jpeg/.ico。</div>
+
+                <div class="sub-title">图标别名</div>
+                <div class="actions">
+                    <a-button @click="addIconAliasRow">新增别名</a-button>
+                    <span class="hint">HTTP 参数示例: icon=default 或 icon=logo.png</span>
+                </div>
+                <div class="alias-list" v-if="iconAliasList.length">
+                    <div class="alias-row" v-for="(alias, index) in iconAliasList" :key="index">
+                        <a-input v-model="alias.key" placeholder="别名"></a-input>
+                        <a-select v-model="alias.file" placeholder="选择图标文件" style="min-width: 220px">
+                            <a-select-option v-for="icon in availableIcons" :key="icon" :value="icon">
+                                ${ icon }
+                            </a-select-option>
+                        </a-select>
+                        <a-button type="danger" @click="removeIconAliasRow(index)">移除</a-button>
+                    </div>
+                </div>
+                <div class="alias-empty" v-else>暂无别名</div>
             </a-card>
 
             <a-card title="FRP 配置" class="section">
@@ -183,7 +201,8 @@
             debug: 0,
             port: 19000,
             toast: {
-                icons: []
+                icons: [],
+                icon_map: {}
             },
             frp: {
                 enable: 0,
@@ -229,6 +248,7 @@
                 imagesUrlPrefix: "/images/",
                 availableIcons: [],
                 config: buildDefaultConfig(),
+                iconAliasList: [],
                 frpStatus: buildDefaultFrpStatus(),
                 frpLogs: [],
                 frpLogLines: 200,
@@ -294,6 +314,9 @@
                 if(!Array.isArray(next.toast.icons)){
                     next.toast.icons = [];
                 }
+                if(!next.toast.icon_map || typeof next.toast.icon_map !== "object"){
+                    next.toast.icon_map = {};
+                }
                 next.frp = next.frp || {};
                 if(typeof next.frp.enable !== "number"){
                     next.frp.enable = 0;
@@ -341,6 +364,8 @@
                         if(data && data.images_url_prefix){
                             this.imagesUrlPrefix = data.images_url_prefix;
                         }
+                        this.iconAliasList = this.aliasListFromMap(this.config.toast.icon_map);
+                        this.syncAvailableIcons();
                     })
                     .catch(() => {
                         this.notify("配置加载失败", "error");
@@ -400,6 +425,7 @@
             },
             saveConfig(){
                 this.saving = true;
+                this.config.toast.icon_map = this.aliasListToMap(this.iconAliasList);
                 fetch("/api/config", {
                     method: "POST",
                     headers: {
@@ -425,6 +451,7 @@
             },
             addIconRow(){
                 this.config.toast.icons.push("");
+                this.syncAvailableIcons();
             },
             addSelectedIcon(){
                 if(!this.selectedIcon){
@@ -435,6 +462,7 @@
             },
             removeIcon(index){
                 this.config.toast.icons.splice(index, 1);
+                this.syncAvailableIcons();
             },
             iconPreview(icon){
                 return this.imagesUrlPrefix + encodeURIComponent(icon);
@@ -466,6 +494,7 @@
                             if(this.availableIcons.indexOf(data.filename) === -1){
                                 this.availableIcons.push(data.filename);
                             }
+                            this.syncAvailableIcons();
                             this.notify("上传成功", "success");
                         }else{
                             this.notify((data && data.message) || "上传失败", "error");
@@ -487,6 +516,47 @@
                 if(this.config.toast.icons.indexOf(trimmed) === -1){
                     this.config.toast.icons.push(trimmed);
                 }
+                this.syncAvailableIcons();
+            },
+            addIconAliasRow(){
+                this.iconAliasList.push({ key: "", file: "" });
+            },
+            removeIconAliasRow(index){
+                this.iconAliasList.splice(index, 1);
+            },
+            aliasListFromMap(map){
+                const list = [];
+                Object.keys(map || {}).sort().forEach(key => {
+                    list.push({ key: key, file: map[key] });
+                });
+                return list;
+            },
+            aliasListToMap(list){
+                const map = {};
+                (list || []).forEach(item => {
+                    const key = (item.key || "").trim();
+                    const file = (item.file || "").trim();
+                    if(key && file){
+                        map[key] = file;
+                    }
+                });
+                return map;
+            },
+            syncAvailableIcons(){
+                const set = new Set(this.availableIcons || []);
+                (this.config.toast.icons || []).forEach(item => {
+                    const name = (item || "").trim();
+                    if(name){
+                        set.add(name);
+                    }
+                });
+                (this.iconAliasList || []).forEach(item => {
+                    const file = (item.file || "").trim();
+                    if(file){
+                        set.add(file);
+                    }
+                });
+                this.availableIcons = Array.from(set).sort();
             },
             setDebug(checked){
                 this.config.debug = checked ? 1 : 0;
@@ -591,6 +661,22 @@
         color: rgba(0,0,0,0.45);
     }
     .icon-empty{
+        color: rgba(0,0,0,0.45);
+        margin-bottom: 8px;
+    }
+    .alias-list{
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-bottom: 8px;
+    }
+    .alias-row{
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+    .alias-empty{
         color: rgba(0,0,0,0.45);
         margin-bottom: 8px;
     }

@@ -29,7 +29,8 @@ type ConfigType struct {
 }
 
 type ToastType struct {
-	Icons []string `yaml:"icons" json:"icons"`
+	Icons   []string          `yaml:"icons" json:"icons"`
+	IconMap map[string]string `yaml:"icon_map" json:"icon_map"`
 }
 
 type FrpType struct {
@@ -99,7 +100,8 @@ func initConfigFile(ConfigPath string) {
 
 	icons := []string{"logo.png"}
 	Toast := ToastType{
-		Icons: icons,
+		Icons:   icons,
+		IconMap: map[string]string{"default": "logo.png"},
 	}
 	Config.Toast = Toast
 

@@ -14,7 +14,7 @@ const AppID = "HttpWinNotice"
 const (
 	DefaultTitle    = "消息通知"
 	DefaultMsg      = "这是一条测试消息"
-	DefaultIcon     = "0"
+	DefaultIcon     = "default"
 	DefaultDuration = "short"
 	DefaultAudio    = "default"
 )

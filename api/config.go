@@ -57,6 +57,8 @@ func UpdateConfigApi(c *gin.Context) {
 	req.Debug = normalizeToggle(req.Debug)
 	req.Frp.Enable = normalizeToggle(req.Frp.Enable)
 	req.Toast.Icons = normalizeIcons(req.Toast.Icons)
+	req.Toast.IconMap = normalizeIconMap(req.Toast.IconMap)
+	req.Toast.Icons = mergeIconMapValues(req.Toast.Icons, req.Toast.IconMap)
 	normalizeFrp(&req.Frp, req.Port)
 
 	if req.Frp.Enable == 1 {
@@ -149,14 +151,44 @@ func normalizeIcons(icons []string) []string {
 	seen := make(map[string]bool)
 	var out []string
 	for _, icon := range icons {
-		name := strings.TrimSpace(icon)
-		if name == "" || seen[name] {
+		name := sanitizeFilename(strings.TrimSpace(icon))
+		if name == "" || !isAllowedIconExt(name) || seen[name] {
 			continue
 		}
 		seen[name] = true
 		out = append(out, name)
 	}
 	return out
+}
+
+func normalizeIconMap(iconMap map[string]string) map[string]string {
+	out := make(map[string]string)
+	for key, value := range iconMap {
+		alias := strings.TrimSpace(key)
+		file := sanitizeFilename(strings.TrimSpace(value))
+		if alias == "" || file == "" || !isAllowedIconExt(file) {
+			continue
+		}
+		out[alias] = file
+	}
+	return out
+}
+
+func mergeIconMapValues(icons []string, iconMap map[string]string) []string {
+	if len(iconMap) == 0 {
+		return icons
+	}
+	seen := make(map[string]bool, len(icons))
+	for _, icon := range icons {
+		seen[icon] = true
+	}
+	for _, file := range iconMap {
+		if !seen[file] {
+			icons = append(icons, file)
+			seen[file] = true
+		}
+	}
+	return icons
 }
 
 func normalizeFrp(frp *setting.FrpType, defaultLocalPort int) {

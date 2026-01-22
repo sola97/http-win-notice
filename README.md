@@ -89,7 +89,7 @@
 | title    | 消息通知               | 通知标题                                          |
 | msg      | 这是一条测试消息       | 通知内容                                          |
 | remark   | 空                     | 备注                                              |
-| icon     | 0                      | 图标索引，配合配置文件使用                        |
+| icon     | default                | 图标别名或文件名（兼容索引数字）                  |
 | duration | short                  | 持续时长，short-短，大概 6 秒 long-长，大概 25 秒 |
 | audio    | default                | 声音                                              |
 | button   | (默认展示全部消息按钮) | 自定义按钮（见下方【button 参数说明】）           |
@@ -101,9 +101,12 @@ toast:
   icons:
     - logo.png
     - logo2.png
+  icon_map:
+    default: logo.png
+    warn: logo2.png
 ```
 
-此时传`icon=1`表示使用`logo2.png`图标，图标图片需放在`config.yml`同级的`images`目录内
+此时传`icon=warn`或`icon=logo2.png`表示使用`logo2.png`图标（仍兼容`icon=1`索引方式）。图标图片需放在`config.yml`同级的`images`目录内
 
 <details>
 <summary>audio的参数可选值如下：</summary>
@@ -302,6 +305,9 @@ toast:
   icons:
     - logo.png
     - logo2.png
+  icon_map:
+    default: logo.png
+    warn: logo2.png
 forward:
   enable: 1
   server_addr: 123.123.1.1

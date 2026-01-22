@@ -4,8 +4,10 @@ import (
 	"github.com/go-toast/toast"
 	"http-win-notice/utils/constant"
 	"http-win-notice/utils/setting"
+	"os"
 	"path"
 	"strconv"
+	"strings"
 )
 
 type Action = toast.Action
@@ -80,17 +82,7 @@ func notificationSetAttr(n *toast.Notification, duration string, audio string) {
 }
 
 func Notice(msg, title, icon, duration, audio string, actions []toast.Action) error {
-	iconIndex, err := strconv.Atoi(icon)
-	if err != nil {
-		iconIndex = 0
-	}
-
-	var iconPath string
-	if len(setting.Config.Toast.Icons) <= iconIndex {
-		iconPath = path.Join(setting.ImagesDir, "logo.png")
-	} else {
-		iconPath = path.Join(setting.ImagesDir, setting.Config.Toast.Icons[iconIndex])
-	}
+	iconPath := resolveIconPath(icon)
 	for i := range actions {
 		if actions[i].Arguments == "$WEB_PAGE" {
 			actions[i].Arguments = setting.HomeUrl()
@@ -110,9 +102,94 @@ func Notice(msg, title, icon, duration, audio string, actions []toast.Action) er
 	}
 	notificationSetAttr(&notification, duration, audio)
 	//fmt.Println("n=", notification)
-	err = notification.Push()
+	err := notification.Push()
 	return err
 	//if err != nil {
 	//	panic(err)
 	//}
+}
+
+func resolveIconPath(icon string) string {
+	file := resolveIconFile(icon)
+	return path.Join(setting.ImagesDir, file)
+}
+
+func resolveIconFile(icon string) string {
+	icon = strings.TrimSpace(icon)
+	if icon == "" {
+		return pickDefaultIconFile()
+	}
+	if idx, err := strconv.Atoi(icon); err == nil {
+		if idx >= 0 && idx < len(setting.Config.Toast.Icons) {
+			file := normalizeIconName(setting.Config.Toast.Icons[idx])
+			if iconFileExists(file) {
+				return file
+			}
+		}
+		return pickDefaultIconFile()
+	}
+	if file, ok := setting.Config.Toast.IconMap[icon]; ok {
+		file = normalizeIconName(file)
+		if isAllowedIconExt(file) && iconFileExists(file) {
+			return file
+		}
+	}
+	for _, candidate := range setting.Config.Toast.Icons {
+		if candidate == icon {
+			file := normalizeIconName(candidate)
+			if isAllowedIconExt(file) && iconFileExists(file) {
+				return file
+			}
+		}
+	}
+	file := normalizeIconName(icon)
+	if file != "" && isAllowedIconExt(file) && iconFileExists(file) {
+		return file
+	}
+	return pickDefaultIconFile()
+}
+
+func pickDefaultIconFile() string {
+	for _, candidate := range setting.Config.Toast.Icons {
+		file := normalizeIconName(candidate)
+		if isAllowedIconExt(file) && iconFileExists(file) {
+			return file
+		}
+	}
+	if iconFileExists("logo.png") {
+		return "logo.png"
+	}
+	if len(setting.Config.Toast.Icons) > 0 {
+		file := normalizeIconName(setting.Config.Toast.Icons[0])
+		if file != "" {
+			return file
+		}
+	}
+	return "logo.png"
+}
+
+func normalizeIconName(name string) string {
+	name = strings.ReplaceAll(name, "\\", "/")
+	name = path.Base(name)
+	if name == "." || name == "/" {
+		return ""
+	}
+	return name
+}
+
+func iconFileExists(name string) bool {
+	if name == "" {
+		return false
+	}
+	_, err := os.Stat(path.Join(setting.ImagesDir, name))
+	return err == nil
+}
+
+func isAllowedIconExt(name string) bool {
+	switch strings.ToLower(path.Ext(name)) {
+	case ".png", ".jpg", ".jpeg", ".ico":
+		return true
+	default:
+		return false
+	}
 }
