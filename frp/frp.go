@@ -1,13 +1,16 @@
 package frp
 
 import (
+	"fmt"
 	"http-win-notice/utils"
 	"http-win-notice/utils/log"
 	"http-win-notice/utils/setting"
 	"os"
 	"os/exec"
 	"path"
+	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -77,6 +80,57 @@ func GetStatus() RuntimeStatus {
 		}
 	}
 	return current
+}
+
+func RestartFrp() error {
+	if runtime.GOOS != "windows" {
+		return fmt.Errorf("frp restart is only supported on windows")
+	}
+	current := GetStatus()
+	err := stopFrpProcess(current)
+	updateStatus(func(s *RuntimeStatus) {
+		s.Running = false
+		s.PID = 0
+		if err != nil {
+			s.LastError = err.Error()
+		} else {
+			s.LastError = ""
+		}
+	})
+	if err != nil {
+		log.Println("frp stop failed:", err)
+		return err
+	}
+	if setting.Config.Frp.Enable != 1 {
+		return fmt.Errorf("frp is disabled")
+	}
+	StartFrp()
+	return nil
+}
+
+func stopFrpProcess(status RuntimeStatus) error {
+	if status.PID > 0 {
+		return runTaskkill("/F", "/T", "/PID", strconv.Itoa(status.PID))
+	}
+	return runTaskkill("/F", "/T", "/IM", "frpc.exe")
+}
+
+func runTaskkill(args ...string) error {
+	cmd := exec.Command("taskkill", args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(output))
+		lower := strings.ToLower(msg)
+		if strings.Contains(lower, "not found") || strings.Contains(lower, "no instance") || strings.Contains(lower, "not running") {
+			return nil
+		}
+		if msg == "" {
+			msg = err.Error()
+		}
+		return fmt.Errorf("taskkill failed: %s", msg)
+	}
+	return nil
 }
 
 func initFrpConfig() {

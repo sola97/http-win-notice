@@ -108,6 +108,28 @@ toast:
 
 此时传`icon=warn`、`icon=logo2`或`icon=logo2.png`表示使用`logo2.png`图标（仍兼容`icon=1`索引方式）。图标图片需放在`config.yml`同级的`images`目录内
 
+#### 通知过滤
+
+可在配置中设置白名单/黑名单规则（支持正则），用于屏蔽不想展示的通知：
+
+```yaml
+filter:
+  enable: 1
+  whitelist:
+    - enabled: 1
+      field: title
+      pattern: "告警|error"
+  blacklist:
+    - enabled: 1
+      field: all
+      pattern: "测试|debug"
+```
+
+规则说明：
+- 白名单非空时，仅发送命中白名单的通知
+- 命中黑名单则直接屏蔽
+- field 支持 `all` / `title` / `msg` / `remark`
+
 <details>
 <summary>audio的参数可选值如下：</summary>
 
@@ -313,6 +335,10 @@ forward:
   server_addr: 123.123.1.1
   server_port: 9919
   token: httpwinnotice123456
+filter:
+  enable: 0
+  whitelist: []
+  blacklist: []
 frp:
   enable: 0
   server_addr: 127.0.0.1

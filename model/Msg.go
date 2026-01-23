@@ -4,10 +4,11 @@ import "gorm.io/gorm"
 
 type Msg struct {
 	gorm.Model
-	Title  string `gorm:"type:varchar(50);not null"`
-	Msg    string `gorm:"type:varchar(500);not null"`
-	Remark string `gorm:"type:text"`
-	Status int    `gorm:"type:tinyint;not null;default:0"`
+	Title        string `gorm:"type:varchar(50);not null"`
+	Msg          string `gorm:"type:varchar(500);not null"`
+	Remark       string `gorm:"type:text"`
+	FilterReason string `gorm:"type:varchar(255)"`
+	Status       int    `gorm:"type:tinyint;not null;default:0"`
 }
 
 func CreateMsg(data *Msg) bool {

@@ -89,6 +89,54 @@
                 <div class="alias-empty" v-else>暂无别名</div>
             </a-card>
 
+            <a-card title="通知过滤" class="section">
+                <div class="field-row">
+                    <div class="field">
+                        <div class="label">启用过滤</div>
+                        <a-switch :checked="config.filter.enable === 1" @change="setFilterEnable"></a-switch>
+                    </div>
+                    <div class="field field-full">
+                        <div class="hint">白名单非空时，只发送命中白名单的通知；命中黑名单则直接屏蔽。支持正则。</div>
+                    </div>
+                </div>
+
+                <div class="sub-title">白名单</div>
+                <div class="actions">
+                    <a-button @click="addFilterRule('whitelist')">新增白名单</a-button>
+                </div>
+                <div class="rule-list" v-if="config.filter.whitelist.length">
+                    <div class="rule-row" v-for="(rule, index) in config.filter.whitelist" :key="'w'+index">
+                        <a-switch :checked="rule.enabled === 1" @change="setRuleEnabled(rule, $event)"></a-switch>
+                        <a-select v-model="rule.field" style="min-width: 120px">
+                            <a-select-option v-for="field in filterFields" :key="field.value" :value="field.value">
+                                ${ field.label }
+                            </a-select-option>
+                        </a-select>
+                        <a-input v-model="rule.pattern" placeholder="正则表达式"></a-input>
+                        <a-button type="danger" @click="removeFilterRule('whitelist', index)">移除</a-button>
+                    </div>
+                </div>
+                <div class="rule-empty" v-else>暂无白名单规则</div>
+
+                <div class="sub-title">黑名单</div>
+                <div class="actions">
+                    <a-button @click="addFilterRule('blacklist')">新增黑名单</a-button>
+                </div>
+                <div class="rule-list" v-if="config.filter.blacklist.length">
+                    <div class="rule-row" v-for="(rule, index) in config.filter.blacklist" :key="'b'+index">
+                        <a-switch :checked="rule.enabled === 1" @change="setRuleEnabled(rule, $event)"></a-switch>
+                        <a-select v-model="rule.field" style="min-width: 120px">
+                            <a-select-option v-for="field in filterFields" :key="field.value" :value="field.value">
+                                ${ field.label }
+                            </a-select-option>
+                        </a-select>
+                        <a-input v-model="rule.pattern" placeholder="正则表达式"></a-input>
+                        <a-button type="danger" @click="removeFilterRule('blacklist', index)">移除</a-button>
+                    </div>
+                </div>
+                <div class="rule-empty" v-else>暂无黑名单规则</div>
+            </a-card>
+
             <a-card title="FRP 配置" class="section">
                 <div class="field-row">
                     <div class="field">
@@ -161,6 +209,7 @@
             <a-card title="FRP 运行状态" class="section">
                 <template slot="extra">
                     <a-button size="small" @click="refreshFrpStatus" :loading="frpStatusLoading">刷新</a-button>
+                    <a-button size="small" type="danger" @click="restartFrp" :loading="frpRestarting">重启FRP</a-button>
                 </template>
                 <div class="status-row">
                     <a-tag :color="frpStatus.enabled ? 'green' : 'default'">
@@ -248,6 +297,11 @@
                 icons: [],
                 icon_map: {}
             },
+            filter: {
+                enable: 0,
+                whitelist: [],
+                blacklist: []
+            },
             frp: {
                 enable: 0,
                 server_addr: "",
@@ -288,11 +342,18 @@
                 dropActive: false,
                 frpStatusLoading: false,
                 frpLogLoading: false,
+                frpRestarting: false,
                 selfCheckLoading: false,
                 current: ["config"],
                 selectedIcon: "",
                 imagesUrlPrefix: "/images/",
                 availableIcons: [],
+                filterFields: [
+                    { value: "all", label: "全部" },
+                    { value: "title", label: "标题" },
+                    { value: "msg", label: "内容" },
+                    { value: "remark", label: "备注" }
+                ],
                 config: buildDefaultConfig(),
                 iconAliasList: [],
                 frpStatus: buildDefaultFrpStatus(),
@@ -378,6 +439,18 @@
                 if(!next.toast.icon_map || typeof next.toast.icon_map !== "object"){
                     next.toast.icon_map = {};
                 }
+                next.filter = next.filter || {};
+                if(typeof next.filter.enable !== "number"){
+                    next.filter.enable = 0;
+                }
+                if(!Array.isArray(next.filter.whitelist)){
+                    next.filter.whitelist = [];
+                }
+                if(!Array.isArray(next.filter.blacklist)){
+                    next.filter.blacklist = [];
+                }
+                next.filter.whitelist = this.normalizeRuleList(next.filter.whitelist);
+                next.filter.blacklist = this.normalizeRuleList(next.filter.blacklist);
                 next.frp = next.frp || {};
                 if(typeof next.frp.enable !== "number"){
                     next.frp.enable = 0;
@@ -483,6 +556,30 @@
             refreshFrp(){
                 this.fetchFrpStatus();
                 this.fetchFrpLogs();
+            },
+            restartFrp(){
+                if(this.frpRestarting){
+                    return;
+                }
+                this.frpRestarting = true;
+                fetch("/api/frp/restart", { method: "POST" })
+                    .then(res => res.json())
+                    .then(data => {
+                        if(data && data.message === "success"){
+                            this.notify("FRP 已重启", "success");
+                            setTimeout(() => {
+                                this.refreshFrp();
+                            }, 800);
+                        }else{
+                            this.notify((data && data.message) || "重启失败", "error");
+                        }
+                    })
+                    .catch(() => {
+                        this.notify("重启失败", "error");
+                    })
+                    .finally(() => {
+                        this.frpRestarting = false;
+                    })
             },
             saveConfig(){
                 this.saving = true;
@@ -662,8 +759,41 @@
             setDebug(checked){
                 this.config.debug = checked ? 1 : 0;
             },
+            setFilterEnable(checked){
+                this.config.filter.enable = checked ? 1 : 0;
+            },
             setFrpEnable(checked){
                 this.config.frp.enable = checked ? 1 : 0;
+            },
+            normalizeRuleList(list){
+                return (list || []).map(item => {
+                    return {
+                        enabled: item && item.enabled ? 1 : 0,
+                        field: item && item.field ? item.field : "all",
+                        pattern: item && item.pattern ? item.pattern : ""
+                    };
+                });
+            },
+            addFilterRule(listName){
+                if(!this.config.filter || !this.config.filter[listName]){
+                    return;
+                }
+                this.config.filter[listName].push({
+                    enabled: 1,
+                    field: "all",
+                    pattern: ""
+                });
+            },
+            removeFilterRule(listName, index){
+                if(!this.config.filter || !this.config.filter[listName]){
+                    return;
+                }
+                this.config.filter[listName].splice(index, 1);
+            },
+            setRuleEnabled(rule, checked){
+                if(rule){
+                    rule.enabled = checked ? 1 : 0;
+                }
             },
             menuClick(e){
                 if(e.key === "logs"){
@@ -855,6 +985,22 @@
         flex-wrap: wrap;
     }
     .alias-empty{
+        color: rgba(0,0,0,0.45);
+        margin-bottom: 8px;
+    }
+    .rule-list{
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-bottom: 8px;
+    }
+    .rule-row{
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+    .rule-empty{
         color: rgba(0,0,0,0.45);
         margin-bottom: 8px;
     }

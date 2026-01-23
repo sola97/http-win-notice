@@ -71,6 +71,8 @@ func HomePage(c *gin.Context) {
 		switch msg.Status {
 		case 1:
 			statusShow = "已提醒"
+		case 2:
+			statusShow = "已过滤"
 		case 9:
 			statusShow = "提醒失败"
 		default:
@@ -82,6 +84,7 @@ func HomePage(c *gin.Context) {
 			"title":  msg.Title,
 			"msg":    msg.Msg,
 			"remark": msg.Remark,
+			"filter_reason": msg.FilterReason,
 			"time":   msg.CreatedAt.Format("2006-01-02 15:04:05"),
 			"status": statusShow,
 		}
@@ -135,15 +138,28 @@ func normalizeToastRequest(req *ToastRequest) {
 
 func handleToastRequest(c *gin.Context, req ToastRequest) {
 	actions := actionsFromButtons(req.Button)
+	filtered, filterReason := notice.ShouldFilter(req.Title, req.Msg, req.Remark)
 	data := model.Msg{
 		Title:  req.Title,
 		Msg:    req.Msg,
 		Remark: req.Remark,
 	}
+	if filtered {
+		data.Status = 2
+		data.FilterReason = filterReason
+	}
 	res := model.CreateMsg(&data)
 	if !res {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"message": "fail, db error",
+		})
+		return
+	}
+	if filtered {
+		c.JSON(http.StatusOK, gin.H{
+			"message":  "filtered",
+			"filtered": true,
+			"reason":   filterReason,
 		})
 		return
 	}

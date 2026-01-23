@@ -24,6 +24,7 @@ type ConfigType struct {
 	Debug   int         `yaml:"debug" json:"debug"`
 	Port    int         `yaml:"port" json:"port"`
 	Toast   ToastType   `yaml:"toast" json:"toast"`
+	Filter  FilterType  `yaml:"filter" json:"filter"`
 	Frp     FrpType     `yaml:"frp" json:"frp"`
 	Forward ForwardType `yaml:"forward" json:"forward"`
 }
@@ -31,6 +32,18 @@ type ConfigType struct {
 type ToastType struct {
 	Icons   []string          `yaml:"icons" json:"icons"`
 	IconMap map[string]string `yaml:"icon_map" json:"icon_map"`
+}
+
+type FilterType struct {
+	Enable    int          `yaml:"enable" json:"enable"`
+	Whitelist []FilterRule `yaml:"whitelist" json:"whitelist"`
+	Blacklist []FilterRule `yaml:"blacklist" json:"blacklist"`
+}
+
+type FilterRule struct {
+	Enabled int    `yaml:"enabled" json:"enabled"`
+	Field   string `yaml:"field" json:"field"`
+	Pattern string `yaml:"pattern" json:"pattern"`
 }
 
 type FrpType struct {
@@ -104,6 +117,13 @@ func initConfigFile(ConfigPath string) {
 		IconMap: map[string]string{"default": "logo.png"},
 	}
 	Config.Toast = Toast
+
+	Filter := FilterType{
+		Enable:    0,
+		Whitelist: []FilterRule{},
+		Blacklist: []FilterRule{},
+	}
+	Config.Filter = Filter
 
 	//默认转发配置
 	Forward := ForwardType{

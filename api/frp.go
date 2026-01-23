@@ -34,6 +34,18 @@ func GetFrpLogsApi(c *gin.Context) {
 	})
 }
 
+func RestartFrpApi(c *gin.Context) {
+	if err := frp.RestartFrp(); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message": "success",
+	})
+}
+
 func parseLines(raw string) int {
 	lines, err := strconv.Atoi(raw)
 	if err != nil || lines <= 0 {

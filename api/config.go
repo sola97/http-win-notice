@@ -1,21 +1,24 @@
 package api
 
 import (
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"gopkg.in/yaml.v3"
 	"http-win-notice/utils/setting"
 	"net/http"
 	"os"
 	"path"
+	"regexp"
 	"sort"
 	"strings"
 )
 
 type ConfigView struct {
-	Debug int               `json:"debug"`
-	Port  int               `json:"port"`
-	Toast setting.ToastType `json:"toast"`
-	Frp   setting.FrpType   `json:"frp"`
+	Debug  int                `json:"debug"`
+	Port   int                `json:"port"`
+	Toast  setting.ToastType  `json:"toast"`
+	Filter setting.FilterType `json:"filter"`
+	Frp    setting.FrpType    `json:"frp"`
 }
 
 type ConfigUpdate = ConfigView
@@ -26,10 +29,11 @@ func ConfigPage(c *gin.Context) {
 
 func GetConfigApi(c *gin.Context) {
 	config := ConfigView{
-		Debug: setting.Config.Debug,
-		Port:  setting.Config.Port,
-		Toast: setting.Config.Toast,
-		Frp:   setting.Config.Frp,
+		Debug:  setting.Config.Debug,
+		Port:   setting.Config.Port,
+		Toast:  setting.Config.Toast,
+		Filter: setting.Config.Filter,
+		Frp:    setting.Config.Frp,
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"config":            config,
@@ -59,7 +63,15 @@ func UpdateConfigApi(c *gin.Context) {
 	req.Toast.Icons = normalizeIcons(req.Toast.Icons)
 	req.Toast.IconMap = normalizeIconMap(req.Toast.IconMap)
 	req.Toast.Icons = mergeIconMapValues(req.Toast.Icons, req.Toast.IconMap)
+	normalizeFilter(&req.Filter)
 	normalizeFrp(&req.Frp, req.Port)
+
+	if err := validateFilterRegex(req.Filter); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": err.Error(),
+		})
+		return
+	}
 
 	if req.Frp.Enable == 1 {
 		if req.Frp.ServerAddr == "" || req.Frp.ServerPort <= 0 {
@@ -79,6 +91,7 @@ func UpdateConfigApi(c *gin.Context) {
 	setting.Config.Debug = req.Debug
 	setting.Config.Port = req.Port
 	setting.Config.Toast = req.Toast
+	setting.Config.Filter = req.Filter
 	setting.Config.Frp = req.Frp
 
 	if err := writeConfig(); err != nil {
@@ -189,6 +202,56 @@ func mergeIconMapValues(icons []string, iconMap map[string]string) []string {
 		}
 	}
 	return icons
+}
+
+func normalizeFilter(filter *setting.FilterType) {
+	filter.Enable = normalizeToggle(filter.Enable)
+	filter.Whitelist = normalizeFilterRules(filter.Whitelist)
+	filter.Blacklist = normalizeFilterRules(filter.Blacklist)
+}
+
+func normalizeFilterRules(rules []setting.FilterRule) []setting.FilterRule {
+	out := make([]setting.FilterRule, 0, len(rules))
+	for _, rule := range rules {
+		rule.Enabled = normalizeToggle(rule.Enabled)
+		rule.Field = normalizeRuleField(rule.Field)
+		rule.Pattern = strings.TrimSpace(rule.Pattern)
+		if rule.Pattern == "" {
+			continue
+		}
+		out = append(out, rule)
+	}
+	return out
+}
+
+func normalizeRuleField(field string) string {
+	switch strings.ToLower(strings.TrimSpace(field)) {
+	case "title", "msg", "remark":
+		return strings.ToLower(strings.TrimSpace(field))
+	default:
+		return "all"
+	}
+}
+
+func validateFilterRegex(filter setting.FilterType) error {
+	check := func(rules []setting.FilterRule, name string) error {
+		for _, rule := range rules {
+			if rule.Enabled != 1 || rule.Pattern == "" {
+				continue
+			}
+			if _, err := regexp.Compile(rule.Pattern); err != nil {
+				return fmt.Errorf("%s规则正则无效: %s", name, rule.Pattern)
+			}
+		}
+		return nil
+	}
+	if err := check(filter.Whitelist, "白名单"); err != nil {
+		return err
+	}
+	if err := check(filter.Blacklist, "黑名单"); err != nil {
+		return err
+	}
+	return nil
 }
 
 func normalizeFrp(frp *setting.FrpType, defaultLocalPort int) {

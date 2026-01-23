@@ -36,6 +36,7 @@ func InitRouters(r *gin.Engine) {
 	r.POST("/api/config/icon/upload", api.UploadIconApi)
 	r.GET("/api/frp/status", api.GetFrpStatusApi)
 	r.GET("/api/frp/logs", api.GetFrpLogsApi)
+	r.POST("/api/frp/restart", api.RestartFrpApi)
 	r.GET("/api/self-check", api.SelfCheckApi)
 	r.POST("/api/logs/clear", api.ClearLogsApi)
 	r.GET("/", api.HomePage)
